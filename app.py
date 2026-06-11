@@ -9,7 +9,7 @@ from openai import OpenAI
 
 # ─── CONFIGURATION BACK-END ──────────────────────────────────────
 # Clé API Groq (Back-end seulement, invisible pour l'utilisateur)
-CLE_API = "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" 
+CLE_API = "cle_api" 
 
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
