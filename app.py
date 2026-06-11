@@ -6,7 +6,6 @@ from docx import Document
 from openai import OpenAI
 
 # ─── CONFIGURATION ──────────────────────────────────────
-# Assurez-vous que CLE_API est dans vos secrets Streamlit Cloud
 CLE_API = st.secrets["CLE_API"]
 client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=CLE_API)
 
@@ -24,17 +23,6 @@ def sauver_temp(f):
     tmp.write(f.read())
     tmp.close()
     return tmp.name
-
-# ─── PROMPT ──────────────────────────────────────────────
-def construire_prompt(texte_hec, texte_p, cours_hec_nom):
-    return f"""Tu es l'IA SAIME de HEC Montréal. Analyse l'équivalence.
-COURS CIBLE: {cours_hec_nom}
-TEXTE HEC: {texte_hec[:3000]}
-TEXTE PARTENAIRE: {texte_p[:3000]}
-
-Réponds UNIQUEMENT en JSON avec ces clés :
-"titre_partenaire", "etablissement", "credits", "unite", "pourcentage", "statut", "analyse_detaillee", "ecarts" (liste).
-"""
 
 # ─── INTERFACE STREAMLIT ─────────────────────────────────
 st.set_page_config(page_title="SAIME HEC", layout="wide")
@@ -55,17 +43,24 @@ if st.button("🚀 LANCER L'ANALYSE"):
             t_h = lire_document(sauver_temp(f_hec))
             t_p = lire_document(sauver_temp(f_p))
             
+            prompt = f"""Tu es l'IA SAIME de HEC Montréal. Analyse l'équivalence.
+            COURS CIBLE: {cours_hec}
+            TEXTE HEC: {t_h[:3000]}
+            TEXTE PARTENAIRE: {t_p[:3000]}
+            Réponds UNIQUEMENT en JSON avec les clés : "titre_partenaire", "etablissement", "credits", "unite", "pourcentage", "statut", "analyse_detaillee", "ecarts" (liste)."""
+            
             res = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": construire_prompt(t_h, t_p, cours_hec)}],
+                messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"}
             )
             data = json.loads(res.choices[0].message.content)
             
-            # --- AFFICHAGE NÉCÉSSAIRE (Markdown simple) ---
-            st.markdown("---")
-            st.subheader("📌 Résultat de l'évaluation")
-            st.markdown(f"""
+            # --- AFFICHAGE AVEC TABS POUR GARDER LE JSON ---
+            tab1, tab2 = st.tabs(["📌 Résultat de l'évaluation", "⚙️ Données brutes (JSON)"])
+            
+            with tab1:
+                st.markdown(f"""
 - **CODE COURS PARTENAIRE :** {data.get('titre_partenaire', 'N/A')}
 - **ÉTABLISSEMENT :** {data.get('etablissement', 'N/A')}
 - **CRÉDITS :** {data.get('credits', 'N/A')}
@@ -75,8 +70,12 @@ if st.button("🚀 LANCER L'ANALYSE"):
 - **STATUT :** {data.get('statut', 'N/A')}
 - **ANALYSE :** {data.get('analyse_detaillee', 'N/A')}
 """)
-            st.markdown("**ÉCARTS / THÈMES MANQUANTS :**")
-            for ecart in data.get('ecarts', []):
-                st.markdown(f"- {ecart}")
+                st.markdown("**ÉCARTS / THÈMES MANQUANTS :**")
+                for ecart in data.get('ecarts', []):
+                    st.markdown(f"- {ecart}")
+            
+            with tab2:
+                st.json(data)
+                
     else:
         st.error("Veuillez téléverser les documents nécessaires.")
