@@ -9,7 +9,8 @@ from openai import OpenAI
 
 # ─── CONFIGURATION BACK-END ──────────────────────────────────────
 # Clé API Groq (Back-end seulement, invisible pour l'utilisateur)
-CLE_API = "cle_api" 
+import streamlit as st
+CLE_API = st.secrets["CLE_API"]
 
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
