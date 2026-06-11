@@ -6,11 +6,11 @@ from docx import Document
 from openai import OpenAI
 
 # ─── CONFIGURATION ──────────────────────────────────────
-# Récupération de la clé depuis les secrets Streamlit
+# Assurez-vous que CLE_API est dans vos secrets Streamlit Cloud
 CLE_API = st.secrets["CLE_API"]
 client = OpenAI(base_url="https://api.groq.com/openai/v1", api_key=CLE_API)
 
-# ─── FONCTIONS UTILITAIRES ──────────────────────────────
+# ─── FONCTIONS LOGIQUES ──────────────────────────────────
 def lire_document(chemin):
     if chemin.lower().endswith(".pdf"):
         doc = fitz.open(chemin)
@@ -25,60 +25,58 @@ def sauver_temp(f):
     tmp.close()
     return tmp.name
 
-# ─── INTERFACE UTILISATEUR ──────────────────────────────
-st.set_page_config(page_title="SAIME", layout="centered")
+# ─── PROMPT ──────────────────────────────────────────────
+def construire_prompt(texte_hec, texte_p, cours_hec_nom):
+    return f"""Tu es l'IA SAIME de HEC Montréal. Analyse l'équivalence.
+COURS CIBLE: {cours_hec_nom}
+TEXTE HEC: {texte_hec[:3000]}
+TEXTE PARTENAIRE: {texte_p[:3000]}
+
+Réponds UNIQUEMENT en JSON avec ces clés :
+"titre_partenaire", "etablissement", "credits", "unite", "pourcentage", "statut", "analyse_detaillee", "ecarts" (liste).
+"""
+
+# ─── INTERFACE STREAMLIT ─────────────────────────────────
+st.set_page_config(page_title="SAIME HEC", layout="wide")
 
 st.title("🎓 SAIME")
 st.markdown("### Analyse des équivalences de cours")
 
-# Formulaire d'entrée
-cours_hec = st.text_input("Code & Titre du cours HEC visé", "COMP 10903 - Comptabilité financière")
-f_hec = st.file_uploader("Téléverser le plan de cours HEC (PDF/Word)", type=["pdf", "docx"])
-f_p = st.file_uploader("Téléverser le(s) plan(s) de cours partenaire(s)", type=["pdf", "docx"])
+col1, col2 = st.columns(2)
+with col1:
+    cours_hec = st.text_input("📚 Cours HEC de référence", "COMP 10903 - Comptabilité financière")
+    f_hec = st.file_uploader("Téléverser le Plan HEC", type=["pdf", "docx"])
+with col2:
+    f_p = st.file_uploader("🌎 Plan(s) de cours partenaire(s)", type=["pdf", "docx"])
 
-if st.button("🚀 Lancer l'analyse"):
+if st.button("🚀 LANCER L'ANALYSE"):
     if f_hec and f_p:
         with st.spinner("Analyse en cours..."):
             t_h = lire_document(sauver_temp(f_hec))
             t_p = lire_document(sauver_temp(f_p))
             
-            prompt = f"""Tu es un expert académique. Analyse l'équivalence entre le cours HEC et le cours partenaire.
-            Cours HEC: {cours_hec}
-            Contenu HEC: {t_h[:3000]}
-            Contenu Partenaire: {t_p[:3000]}
-            
-            Réponds EXCLUSIVEMENT en format JSON avec ces clés :
-            "code_partenaire", "etablissement", "titre_cours", "langue", "credits", "unite", "pourcentage", "statut", "ecarts" (liste), "approche", "version", "commentaires"
-            """
-            
             res = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": construire_prompt(t_h, t_p, cours_hec)}],
                 response_format={"type": "json_object"}
             )
             data = json.loads(res.choices[0].message.content)
             
-            # Affichage propre (Bullet Points)
+            # --- AFFICHAGE NÉCÉSSAIRE (Markdown simple) ---
             st.markdown("---")
             st.subheader("📌 Résultat de l'évaluation")
             st.markdown(f"""
-- **CODE COURS PARTENAIRE :** {data.get('code_partenaire', 'N/A')}
+- **CODE COURS PARTENAIRE :** {data.get('titre_partenaire', 'N/A')}
 - **ÉTABLISSEMENT :** {data.get('etablissement', 'N/A')}
-- **TITRE DU COURS :** {data.get('titre_cours', 'N/A')}
-- **LANGUE :** {data.get('langue', 'N/A')}
 - **CRÉDITS :** {data.get('credits', 'N/A')}
 - **UNITÉ :** {data.get('unite', 'N/A')}
 - **COURS HEC VISÉ :** {cours_hec}
-- **% ÉQUIVALENCE :** {data.get('pourcentage', 'N/A')}%
+- **% ÉQUIVALENCE :** {data.get('pourcentage', 0)}%
 - **STATUT :** {data.get('statut', 'N/A')}
-- **APPROCHE PÉDAGOGIQUE :** {data.get('approche', 'N/A')}
-- **COHORTE / VERSION :** {data.get('version', 'N/A')}
-- **COMMENTAIRES :** {data.get('commentaires', 'N/A')}
-
-**ÉCARTS / THÈMES MANQUANTS :**
-            """)
+- **ANALYSE :** {data.get('analyse_detaillee', 'N/A')}
+""")
+            st.markdown("**ÉCARTS / THÈMES MANQUANTS :**")
             for ecart in data.get('ecarts', []):
                 st.markdown(f"- {ecart}")
-                
     else:
-        st.warning("Veuillez remplir le cours visé et téléverser les fichiers.")
+        st.error("Veuillez téléverser les documents nécessaires.")
